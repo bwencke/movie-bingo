@@ -619,8 +619,12 @@
             const playerId = currentPlayerId;
 
             exitRoom();
-            localStorage.removeItem(PARTY_STORAGE_KEY);
-            localStorage.removeItem(BOARD_STORAGE_KEY);
+            // Another tab may have since joined as someone else; keep their saved spot.
+            const savedParty = loadSavedParty();
+            if (!savedParty || savedParty.playerId === playerId) {
+                localStorage.removeItem(PARTY_STORAGE_KEY);
+                localStorage.removeItem(BOARD_STORAGE_KEY);
+            }
             updatePartyUI();
 
             if (playerId && isMultiplayerAvailable()) {
@@ -658,13 +662,15 @@
         }
 
         function saveBoard() {
-            localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify({ boardData, hasWon }));
+            localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify({ playerId: currentPlayerId, boardData, hasWon }));
         }
 
-        function restoreSavedBoard() {
+        function restoreSavedBoard(playerId) {
             try {
                 const saved = JSON.parse(localStorage.getItem(BOARD_STORAGE_KEY));
                 if (!saved || !Array.isArray(saved.boardData) || saved.boardData.length !== 25) return false;
+                // Boards saved before cards were tagged with their player have no playerId.
+                if (saved.playerId && saved.playerId !== playerId) return false;
                 boardData = saved.boardData;
                 hasWon = !!saved.hasWon;
                 renderBoard();
@@ -884,9 +890,11 @@
 
         // Keeps other open tabs of the same player in step with this one.
         window.addEventListener('storage', event => {
+            if (!currentPlayerId) return;
             if (event.key === BOARD_STORAGE_KEY && event.newValue) {
-                restoreSavedBoard();
-            } else if (event.key === PARTY_STORAGE_KEY && !event.newValue && currentPlayerId) {
+                restoreSavedBoard(currentPlayerId);
+            } else if (event.key === PARTY_STORAGE_KEY && !event.newValue && event.oldValue
+                && JSON.parse(event.oldValue).playerId === currentPlayerId) {
                 exitRoom();
                 updatePartyUI();
                 openJoinModal();
@@ -904,7 +912,7 @@
 
             const savedParty = isMultiplayerAvailable() ? loadSavedParty() : null;
 
-            if (!(savedParty && restoreSavedBoard())) {
+            if (!(savedParty && restoreSavedBoard(savedParty.playerId))) {
                 initGame();
             }
             initSnow();
