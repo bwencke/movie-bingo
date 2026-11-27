@@ -838,11 +838,15 @@
 
         function renderLeaderboard() {
             const leaderboard = document.getElementById('party-leaderboard');
-            leaderboard.innerHTML = '';
-
             const players = roomPlayers.filter(player =>
                 player.id === currentPlayerId || onlinePlayerIds.has(player.id)
             );
+
+            // Rebuilding the pills mid-tap swallows the click, so only rebuild when something changed.
+            const signature = JSON.stringify([currentPlayerId, players.map(p => [p.id, p.player_name, p.squares_needed])]);
+            if (leaderboard.dataset.signature === signature) return;
+            leaderboard.dataset.signature = signature;
+            leaderboard.innerHTML = '';
 
             let anyViewable = false;
             players.forEach(player => {
@@ -969,6 +973,7 @@
             leaderboard.classList.toggle('hidden', !inRoom);
             if (!inRoom) {
                 leaderboard.innerHTML = '';
+                delete leaderboard.dataset.signature;
                 document.getElementById('leaderboard-hint').classList.add('hidden');
             }
         }
