@@ -36,3 +36,9 @@ supabase db push
 ```
 
 Put the project URL and anon key from Project Settings > API into `js/supabase-config.js`.
+
+## Deploy (GitHub Pages)
+
+`.github/workflows/deploy-pages.yml` publishes the repo root to GitHub Pages on every push to `main`.
+One-time setup: in the repo's Settings > Pages, set **Source** to **GitHub Actions**.
+If you use Supabase Auth, add the Pages URL to the allowed redirect URLs in your Supabase project.
