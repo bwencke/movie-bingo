@@ -599,6 +599,7 @@
                 .from('players')
                 .select('id')
                 .eq('id', savedParty.playerId)
+                .eq('room_code', PARTY_ROOM_CODE)
                 .maybeSingle();
 
             if (error || !data) {
