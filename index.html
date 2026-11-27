@@ -223,7 +223,7 @@
                 <p id="card-modal-status" class="text-gray-300 text-sm mb-3"></p>
                 <div id="card-modal-grid" class="grid grid-cols-5 gap-0.5 sm:gap-1 bg-gray-900 p-0.5 sm:p-1 border-2 sm:border-4 border-holiday-green"></div>
                 <p id="card-modal-offline" class="text-gray-400 text-sm mt-3 hidden">They've left the watch party — this is the last card they shared.</p>
-                <button onclick="closePlayerCard()" class="mt-4 bg-holiday-red hover:bg-red-700 text-white font-bold py-2 px-6 rounded-full w-full">Close</button>
+                <button id="card-modal-close" onclick="closePlayerCard()" class="mt-4 bg-holiday-red hover:bg-red-700 text-white font-bold py-2 px-6 rounded-full w-full">Close</button>
             </div>
         </div>
 
@@ -888,6 +888,7 @@
             viewedPlayerId = playerId;
             renderPlayerCard();
             document.getElementById('card-modal').classList.remove('hidden');
+            document.getElementById('card-modal-close').focus();
         }
 
         function closePlayerCard() {
@@ -1032,7 +1033,13 @@
         }
 
         document.addEventListener('keydown', event => {
+            if (!viewedPlayerId) return;
             if (event.key === 'Escape') closePlayerCard();
+            // Close is the modal's only control; keep Tab from reaching the page behind it.
+            if (event.key === 'Tab') {
+                event.preventDefault();
+                document.getElementById('card-modal-close').focus();
+            }
         });
 
         // Keeps other open tabs of the same player in step with this one.
