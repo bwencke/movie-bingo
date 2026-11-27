@@ -143,7 +143,7 @@
                     🎉 Join Watch Party
                 </button>
                 <div id="room-badge" class="inline-flex items-center gap-2 bg-holiday-green text-white font-bold text-sm py-1.5 pl-4 pr-1.5 rounded-full shadow-lg hidden">
-                    <span>🎄 In the Watch Party</span>
+                    <span>🎄 Room: <span id="room-code-label" class="tracking-widest"></span></span>
                     <button onclick="leaveWatchParty()" class="bg-green-900 hover:bg-green-950 text-green-100 text-xs font-semibold py-1 px-3 rounded-full transition-colors">Leave</button>
                 </div>
             </div>
@@ -201,13 +201,18 @@
 
         <!-- Join Watch Party Modal -->
         <div id="join-modal" class="fixed inset-0 bg-black bg-opacity-70 z-40 flex items-center justify-center hidden">
-            <form onsubmit="submitJoinForm(event)" class="bg-gray-800 p-6 rounded-xl border-2 border-holiday-gold max-w-sm w-full mx-4 text-center">
-                <h3 class="text-3xl font-festive text-holiday-gold mb-1">Join the Watch Party</h3>
+            <form onsubmit="submitJoinForm(event)" class="bg-gray-800 p-6 rounded-xl border-2 border-holiday-gold max-w-sm w-full mx-4 max-h-full overflow-y-auto text-center">
+                <h3 class="text-3xl font-festive text-holiday-gold mb-1">Join a Watch Party</h3>
                 <p class="text-gray-300 text-sm mb-5">Race your friends to BINGO in real time.</p>
 
                 <label for="join-name" class="block text-left text-sm font-semibold text-gray-300 mb-1">Your Name</label>
                 <input id="join-name" type="text" maxlength="24" autocomplete="nickname" required
                        class="w-full mb-4 px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white focus:outline-none focus:border-holiday-gold">
+
+                <label for="join-room" class="block text-left text-sm font-semibold text-gray-300 mb-1">Room Code</label>
+                <input id="join-room" type="text" placeholder="SANTA26" autocomplete="off" required
+                       oninput="this.value = normalizeRoomCode(this.value)"
+                       class="w-full mb-4 px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white uppercase tracking-widest focus:outline-none focus:border-holiday-gold">
 
                 <p id="join-error" class="text-red-400 text-sm mb-3 hidden"></p>
 
@@ -314,8 +319,6 @@
             [0,6,12,18,24], [4,8,12,16,20]
         ];
 
-        // Everyone plays in one shared watch party.
-        const PARTY_ROOM_CODE = 'WATCHPARTY';
         const PARTY_STORAGE_KEY = 'movieBingoParty';
         const BOARD_STORAGE_KEY = 'movieBingoBoard';
 
@@ -546,6 +549,10 @@
             return !!window.supabaseClient;
         }
 
+        function normalizeRoomCode(value) {
+            return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+        }
+
         function onPartyButtonClick() {
             if (!isMultiplayerAvailable()) {
                 showAlert("Multiplayer unavailable", "Watch parties aren't set up yet. Add the Supabase URL and anon key to js/supabase-config.js.");
@@ -577,9 +584,10 @@
         async function submitJoinForm(event) {
             event.preventDefault();
             const name = document.getElementById('join-name').value.trim();
+            const roomCode = normalizeRoomCode(document.getElementById('join-room').value);
 
-            if (!name) {
-                showJoinError('Enter your name.');
+            if (!name || !roomCode) {
+                showJoinError('Enter your name and a room code.');
                 return;
             }
 
@@ -588,7 +596,7 @@
             submitButton.innerText = 'Joining…';
 
             try {
-                await joinWatchParty(name);
+                await joinWatchParty(name, roomCode);
                 closeJoinModal();
             } catch (err) {
                 console.warn('Could not join watch party:', err);
@@ -599,7 +607,7 @@
             }
         }
 
-        async function joinWatchParty(playerName, roomCode = PARTY_ROOM_CODE) {
+        async function joinWatchParty(playerName, roomCode) {
             if (!isMultiplayerAvailable()) throw new Error('Supabase is not configured.');
 
             const needed = getSquaresNeededForBingo();
@@ -661,7 +669,7 @@
                 .from('players')
                 .select('id')
                 .eq('id', savedParty.playerId)
-                .eq('room_code', PARTY_ROOM_CODE)
+                .eq('room_code', savedParty.roomCode)
                 .maybeSingle();
 
             if (error || !data) {
@@ -670,14 +678,14 @@
                 return false;
             }
 
-            enterRoom(savedParty.playerId, savedParty.playerName, PARTY_ROOM_CODE);
+            enterRoom(savedParty.playerId, savedParty.playerName, savedParty.roomCode);
             return true;
         }
 
         function loadSavedParty() {
             try {
                 const saved = JSON.parse(localStorage.getItem(PARTY_STORAGE_KEY));
-                return saved && saved.playerId && saved.playerName ? saved : null;
+                return saved && saved.playerId && saved.playerName && saved.roomCode ? saved : null;
             } catch {
                 return null;
             }
@@ -968,6 +976,7 @@
             const inRoom = !!currentRoomCode;
             document.getElementById('party-button').classList.toggle('hidden', inRoom);
             document.getElementById('room-badge').classList.toggle('hidden', !inRoom);
+            document.getElementById('room-code-label').innerText = currentRoomCode || '';
 
             const leaderboard = document.getElementById('party-leaderboard');
             leaderboard.classList.toggle('hidden', !inRoom);
