@@ -880,6 +880,13 @@
 
         // Start everything on load
         window.onload = () => {
+            // Carry over sessions saved before progress moved from sessionStorage to localStorage.
+            [PARTY_STORAGE_KEY, BOARD_STORAGE_KEY].forEach(key => {
+                const legacy = sessionStorage.getItem(key);
+                if (legacy && !localStorage.getItem(key)) localStorage.setItem(key, legacy);
+                sessionStorage.removeItem(key);
+            });
+
             const savedParty = isMultiplayerAvailable() ? loadSavedParty() : null;
 
             if (!(savedParty && restoreSavedBoard())) {
