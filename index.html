@@ -144,6 +144,7 @@
                 </button>
                 <div id="room-badge" class="inline-flex items-center gap-2 bg-holiday-green text-white font-bold text-sm py-1.5 pl-4 pr-1.5 rounded-full shadow-lg hidden">
                     <span>🎄 Room: <span id="room-code-label" class="tracking-widest"></span></span>
+                    <button onclick="copyInviteLink()" class="bg-holiday-gold hover:bg-yellow-500 text-gray-900 text-xs font-semibold py-1 px-3 rounded-full transition-colors">🔗 Invite</button>
                     <button onclick="leaveWatchParty()" class="bg-green-900 hover:bg-green-950 text-green-100 text-xs font-semibold py-1 px-3 rounded-full transition-colors">Leave</button>
                 </div>
             </div>
@@ -210,9 +211,12 @@
                        class="w-full mb-4 px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white focus:outline-none focus:border-holiday-gold">
 
                 <label for="join-room" class="block text-left text-sm font-semibold text-gray-300 mb-1">Room Code</label>
-                <input id="join-room" type="text" placeholder="SANTA26" autocomplete="off" required
-                       oninput="this.value = normalizeRoomCode(this.value)"
-                       class="w-full mb-4 px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white uppercase tracking-widest focus:outline-none focus:border-holiday-gold">
+                <div class="flex gap-2 mb-4">
+                    <input id="join-room" type="text" placeholder="SANTA26" autocomplete="off" required
+                           oninput="this.value = normalizeRoomCode(this.value)"
+                           class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white uppercase tracking-widest focus:outline-none focus:border-holiday-gold">
+                    <button type="button" onclick="fillNewRoomCode()" class="shrink-0 bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold py-2 px-3 rounded-lg">🎲 New Code</button>
+                </div>
 
                 <p id="join-error" class="text-red-400 text-sm mb-3 hidden"></p>
 
@@ -551,6 +555,51 @@
 
         function normalizeRoomCode(value) {
             return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+        }
+
+        const ROOM_CODE_WORDS = ['SANTA', 'ELF', 'SNOW', 'COCOA', 'JINGLE', 'TINSEL', 'HOLLY', 'FROSTY', 'SLEIGH', 'GINGER', 'CAROL', 'MITTEN'];
+        const ROOM_URL_PARAM = 'room';
+
+        function generateRoomCode() {
+            const [wordIndex, number] = crypto.getRandomValues(new Uint32Array(2));
+            const digits = String(number % 10000).padStart(4, '0');
+            return ROOM_CODE_WORDS[wordIndex % ROOM_CODE_WORDS.length] + digits;
+        }
+
+        function fillNewRoomCode() {
+            document.getElementById('join-room').value = generateRoomCode();
+            document.getElementById('join-error').classList.add('hidden');
+        }
+
+        function getInviteRoomCode() {
+            return normalizeRoomCode(new URLSearchParams(window.location.search).get(ROOM_URL_PARAM) || '');
+        }
+
+        function clearInviteRoomParam() {
+            const url = new URL(window.location.href);
+            if (!url.searchParams.has(ROOM_URL_PARAM)) return;
+            url.searchParams.delete(ROOM_URL_PARAM);
+            history.replaceState(null, '', url);
+        }
+
+        function buildInviteLink(roomCode) {
+            const url = new URL(window.location.href);
+            url.search = '';
+            url.hash = '';
+            url.searchParams.set(ROOM_URL_PARAM, roomCode);
+            return url.toString();
+        }
+
+        async function copyInviteLink() {
+            if (!currentRoomCode) return;
+            const link = buildInviteLink(currentRoomCode);
+            try {
+                await navigator.clipboard.writeText(link);
+                showToast('Invite link copied! Paste it to your friends.', '🔗', 'invite-link');
+            } catch (err) {
+                console.warn('Could not copy invite link:', err);
+                showAlert('Invite your friends', `Share this link: ${link}`);
+            }
         }
 
         function onPartyButtonClick() {
@@ -1123,7 +1172,20 @@
                 sessionStorage.removeItem(key);
             });
 
-            const savedParty = isMultiplayerAvailable() ? loadSavedParty() : null;
+            const inviteRoomCode = getInviteRoomCode();
+            clearInviteRoomParam();
+            if (inviteRoomCode) document.getElementById('join-room').value = inviteRoomCode;
+
+            let savedParty = isMultiplayerAvailable() ? loadSavedParty() : null;
+            // An invite to a different room replaces the party this browser was in.
+            if (savedParty && inviteRoomCode && savedParty.roomCode !== inviteRoomCode) {
+                document.getElementById('join-name').value = savedParty.playerName;
+                window.supabaseClient.from('players').delete().eq('id', savedParty.playerId)
+                    .then(({ error }) => { if (error) console.warn('Could not leave previous room:', error.message); });
+                localStorage.removeItem(PARTY_STORAGE_KEY);
+                localStorage.removeItem(BOARD_STORAGE_KEY);
+                savedParty = null;
+            }
 
             if (!(savedParty && restoreSavedBoard(savedParty.playerId))) {
                 initGame();
