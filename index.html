@@ -315,6 +315,8 @@
         let currentRoomCode = null;
         let roomChannel = null;
         let leaderboardRequestId = 0;
+        let roomPlayers = [];
+        let onlinePlayerIds = new Set();
         let syncQueue = Promise.resolve();
 
         // Shuffle array function
@@ -601,22 +603,30 @@
             currentPlayerId = playerId;
             currentPlayerName = playerName;
             currentRoomCode = roomCode;
-            sessionStorage.setItem(PARTY_STORAGE_KEY, JSON.stringify({ playerId, playerName, roomCode }));
+            localStorage.setItem(PARTY_STORAGE_KEY, JSON.stringify({ playerId, playerName, roomCode }));
             saveBoard();
             updatePartyUI();
             subscribeToRoom(roomCode);
             refreshLeaderboard(roomCode);
         }
 
-        async function leaveWatchParty() {
-            const playerId = currentPlayerId;
-
+        function exitRoom() {
             unsubscribeFromRoom();
             currentPlayerId = null;
             currentPlayerName = null;
             currentRoomCode = null;
-            sessionStorage.removeItem(PARTY_STORAGE_KEY);
-            sessionStorage.removeItem(BOARD_STORAGE_KEY);
+        }
+
+        async function leaveWatchParty() {
+            const playerId = currentPlayerId;
+
+            exitRoom();
+            // Another tab may have since joined as someone else; keep their saved spot.
+            const savedParty = loadSavedParty();
+            if (!savedParty || savedParty.playerId === playerId) {
+                localStorage.removeItem(PARTY_STORAGE_KEY);
+                localStorage.removeItem(BOARD_STORAGE_KEY);
+            }
             updatePartyUI();
 
             if (playerId && isMultiplayerAvailable()) {
@@ -625,7 +635,7 @@
             }
         }
 
-        // Reconnects to the saved room after a refresh, reusing the existing player row.
+        // Reconnects after a refresh or reopened tab, reusing the existing player row.
         async function restoreWatchParty(savedParty) {
             const { data, error } = await window.supabaseClient
                 .from('players')
@@ -635,8 +645,8 @@
                 .maybeSingle();
 
             if (error || !data) {
-                sessionStorage.removeItem(PARTY_STORAGE_KEY);
-                sessionStorage.removeItem(BOARD_STORAGE_KEY);
+                localStorage.removeItem(PARTY_STORAGE_KEY);
+                localStorage.removeItem(BOARD_STORAGE_KEY);
                 return false;
             }
 
@@ -646,7 +656,7 @@
 
         function loadSavedParty() {
             try {
-                const saved = JSON.parse(sessionStorage.getItem(PARTY_STORAGE_KEY));
+                const saved = JSON.parse(localStorage.getItem(PARTY_STORAGE_KEY));
                 return saved && saved.playerId && saved.playerName ? saved : null;
             } catch {
                 return null;
@@ -654,13 +664,15 @@
         }
 
         function saveBoard() {
-            sessionStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify({ boardData, hasWon }));
+            localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify({ playerId: currentPlayerId, boardData, hasWon }));
         }
 
-        function restoreSavedBoard() {
+        function restoreSavedBoard(playerId) {
             try {
-                const saved = JSON.parse(sessionStorage.getItem(BOARD_STORAGE_KEY));
+                const saved = JSON.parse(localStorage.getItem(BOARD_STORAGE_KEY));
                 if (!saved || !Array.isArray(saved.boardData) || saved.boardData.length !== 25) return false;
+                // Boards saved before cards were tagged with their player have no playerId.
+                if (saved.playerId && saved.playerId !== playerId) return false;
                 boardData = saved.boardData;
                 hasWon = !!saved.hasWon;
                 renderBoard();
@@ -693,8 +705,13 @@
         function subscribeToRoom(roomCode) {
             unsubscribeFromRoom();
 
-            roomChannel = window.supabaseClient
-                .channel(`room-${roomCode}`)
+            const channel = window.supabaseClient
+                .channel(`room-${roomCode}`, { config: { presence: { key: currentPlayerId } } })
+                // Presence tracks who has the page open, so players who closed their tab drop off the leaderboard.
+                .on('presence', { event: 'sync' }, () => {
+                    onlinePlayerIds = new Set(Object.keys(channel.presenceState()));
+                    renderLeaderboard();
+                })
                 .on('postgres_changes', {
                     event: '*',
                     schema: 'public',
@@ -708,9 +725,12 @@
                     refreshLeaderboard(roomCode);
                 })
                 .subscribe(status => {
+                    if (status !== 'SUBSCRIBED') return;
+                    channel.track({ player_name: currentPlayerName });
                     // Also catches up on anything missed while the socket was reconnecting.
-                    if (status === 'SUBSCRIBED') refreshLeaderboard(roomCode);
+                    refreshLeaderboard(roomCode);
                 });
+            roomChannel = channel;
         }
 
         function unsubscribeFromRoom() {
@@ -718,6 +738,8 @@
                 window.supabaseClient.removeChannel(roomChannel);
                 roomChannel = null;
             }
+            roomPlayers = [];
+            onlinePlayerIds = new Set();
         }
 
         async function refreshLeaderboard(roomCode) {
@@ -739,12 +761,17 @@
                 return;
             }
 
-            renderLeaderboard(data);
+            roomPlayers = data;
+            renderLeaderboard();
         }
 
-        function renderLeaderboard(players) {
+        function renderLeaderboard() {
             const leaderboard = document.getElementById('party-leaderboard');
             leaderboard.innerHTML = '';
+
+            const players = roomPlayers.filter(player =>
+                player.id === currentPlayerId || onlinePlayerIds.has(player.id)
+            );
 
             players.forEach(player => {
                 const pill = document.createElement('span');
@@ -863,11 +890,31 @@
             drawSnow();
         }
 
+        // Keeps other open tabs of the same player in step with this one.
+        window.addEventListener('storage', event => {
+            if (!currentPlayerId) return;
+            if (event.key === BOARD_STORAGE_KEY && event.newValue) {
+                restoreSavedBoard(currentPlayerId);
+            } else if (event.key === PARTY_STORAGE_KEY && !event.newValue && event.oldValue
+                && JSON.parse(event.oldValue).playerId === currentPlayerId) {
+                exitRoom();
+                updatePartyUI();
+                openJoinModal();
+            }
+        });
+
         // Start everything on load
         window.onload = () => {
+            // Carry over sessions saved before progress moved from sessionStorage to localStorage.
+            [PARTY_STORAGE_KEY, BOARD_STORAGE_KEY].forEach(key => {
+                const legacy = sessionStorage.getItem(key);
+                if (legacy && !localStorage.getItem(key)) localStorage.setItem(key, legacy);
+                sessionStorage.removeItem(key);
+            });
+
             const savedParty = isMultiplayerAvailable() ? loadSavedParty() : null;
 
-            if (!(savedParty && restoreSavedBoard())) {
+            if (!(savedParty && restoreSavedBoard(savedParty.playerId))) {
                 initGame();
             }
             initSnow();
