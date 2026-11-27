@@ -758,7 +758,7 @@
                 }, payload => {
                     const player = payload.new;
                     if (player && player.id && player.id !== currentPlayerId && player.last_action) {
-                        showToast(`${player.player_name} ${player.last_action}`, player.has_bingo ? '🏆' : '🎄');
+                        showToast(`${player.player_name} ${player.last_action}`, player.has_bingo ? '🏆' : '🎄', player.id);
                     }
                     refreshLeaderboard(roomCode);
                 })
@@ -978,20 +978,45 @@
             }
         }
 
-        function showToast(message, icon = '🎄') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = 'toast bg-gray-800 border border-holiday-gold text-white text-sm font-semibold px-4 py-3 rounded-lg shadow-2xl max-w-xs';
-            toast.textContent = `${icon} ${message}`;
-            container.appendChild(toast);
+        const MAX_TOASTS = 3;
+        const TOAST_DURATION_MS = 3500;
+        const toastsByKey = new Map();
 
-            void toast.offsetWidth; // Force layout so the entry transition runs
+        // Each player gets one toast that updates in place, and only a few show at once,
+        // so rapid clicking can't fill the screen.
+        function showToast(message, icon = '🎄', key = null) {
+            const container = document.getElementById('toast-container');
+            let toast = key ? toastsByKey.get(key) : null;
+
+            if (toast) {
+                container.appendChild(toast); // Move to the newest position
+            } else {
+                toast = document.createElement('div');
+                toast.className = 'toast bg-gray-800 border border-holiday-gold text-white text-sm font-semibold px-4 py-3 rounded-lg shadow-2xl max-w-xs';
+                container.appendChild(toast);
+                if (key) {
+                    toast.dataset.toastKey = key;
+                    toastsByKey.set(key, toast);
+                }
+                void toast.offsetWidth; // Force layout so the entry transition runs
+            }
+            toast.textContent = `${icon} ${message}`;
             toast.classList.add('toast-visible');
 
-            setTimeout(() => {
-                toast.classList.remove('toast-visible');
-                setTimeout(() => toast.remove(), 300);
-            }, 3500);
+            clearTimeout(toast.hideTimer);
+            toast.hideTimer = setTimeout(() => dismissToast(toast, key), TOAST_DURATION_MS);
+
+            const active = [...container.children].filter(el => !el.dataset.leaving);
+            active.slice(0, Math.max(0, active.length - MAX_TOASTS)).forEach(el => dismissToast(el, el.dataset.toastKey));
+        }
+
+        function dismissToast(toast, key) {
+            if (toast.dataset.leaving) return;
+            toast.dataset.leaving = 'true';
+            clearTimeout(toast.hideTimer);
+            if (key && toastsByKey.get(key) === toast) toastsByKey.delete(key);
+            toast.classList.remove('toast-visible');
+            setTimeout(() => toast.remove(), 300);
         }
 
         // Canvas Snow Effect
