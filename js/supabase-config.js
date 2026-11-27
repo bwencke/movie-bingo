@@ -2,6 +2,6 @@
 // Local dev: run `supabase start` and copy the API URL and publishable/anon key it prints.
 // Production: Supabase dashboard > Project Settings > API.
 window.SUPABASE_CONFIG = {
-    url: '',
-    anonKey: ''
+    url: 'https://lacazgxqydevzvdtporu.supabase.co',
+    anonKey: 'sb_publishable_CtuwZhtQ9wA47z9pP_tvOw_3SnPgu2i'
 };
