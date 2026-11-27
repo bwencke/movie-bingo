@@ -846,7 +846,7 @@
 
             let anyViewable = false;
             players.forEach(player => {
-                const viewable = player.id !== currentPlayerId && playerBoards.has(player.id);
+                const viewable = player.id !== currentPlayerId;
                 const pill = document.createElement(viewable ? 'button' : 'span');
                 const needed = player.squares_needed;
                 let classes = 'px-3 py-1 rounded-full text-sm shadow ';
@@ -888,6 +888,7 @@
 
         function openPlayerCard(playerId) {
             viewedPlayerId = playerId;
+            document.getElementById('card-modal-grid').innerHTML = '';
             renderPlayerCard();
             document.getElementById('card-modal').classList.remove('hidden');
             document.getElementById('card-modal-close').focus();
@@ -910,13 +911,24 @@
             const player = roomPlayers.find(p => p.id === viewedPlayerId);
             const board = playerBoards.get(viewedPlayerId);
             const grid = document.getElementById('card-modal-grid');
-            const offline = !board;
-
-            document.getElementById('card-modal-offline').classList.toggle('hidden', !offline);
-            if (offline) return; // Keep showing the last card we had.
-
             const name = player ? player.player_name : 'Player';
             document.getElementById('card-modal-title').textContent = `${name}'s Card`;
+
+            if (!board) {
+                // Either they left (keep the last card we showed) or their card hasn't arrived yet,
+                // e.g. their tab is still running a version of the page that doesn't share cards.
+                const hasShownCard = grid.childElementCount > 0;
+                grid.classList.toggle('hidden', !hasShownCard);
+                document.getElementById('card-modal-offline').classList.toggle('hidden', !hasShownCard);
+                if (!hasShownCard) {
+                    document.getElementById('card-modal-status').textContent =
+                        `Waiting for ${name}'s card… If it doesn't show up, ask them to refresh the page.`;
+                }
+                return;
+            }
+
+            grid.classList.remove('hidden');
+            document.getElementById('card-modal-offline').classList.add('hidden');
 
             const winningCells = new Set(
                 WINNING_LINES.filter(line => line.every(index => board[index].marked)).flat()
