@@ -286,6 +286,7 @@
         let currentRoomCode = null;
         let roomChannel = null;
         let leaderboardRequestId = 0;
+        let syncQueue = Promise.resolve();
 
         // Shuffle array function
         function shuffle(array) {
@@ -644,21 +645,24 @@
             }
         }
 
-        async function syncBoardState(actionMessage) {
-            if (!currentPlayerId || !isMultiplayerAvailable()) return;
+        // Updates are queued so rapid clicks reach the database in order.
+        function syncBoardState(actionMessage) {
+            if (!currentPlayerId || !isMultiplayerAvailable()) return syncQueue;
 
+            const playerId = currentPlayerId;
             const needed = getSquaresNeededForBingo();
-            const { error } = await window.supabaseClient
-                .from('players')
-                .update({
-                    squares_needed: needed,
-                    last_action: actionMessage,
-                    has_bingo: needed === 0,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', currentPlayerId);
+            const update = {
+                squares_needed: needed,
+                last_action: actionMessage,
+                has_bingo: needed === 0,
+                updated_at: new Date().toISOString()
+            };
 
-            if (error) console.warn('Could not sync board state:', error.message);
+            syncQueue = syncQueue.then(async () => {
+                const { error } = await window.supabaseClient.from('players').update(update).eq('id', playerId);
+                if (error) console.warn('Could not sync board state:', error.message);
+            }).catch(err => console.warn('Could not sync board state:', err));
+            return syncQueue;
         }
 
         function subscribeToRoom(roomCode) {
