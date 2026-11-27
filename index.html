@@ -608,13 +608,17 @@
             refreshLeaderboard(roomCode);
         }
 
-        async function leaveWatchParty() {
-            const playerId = currentPlayerId;
-
+        function exitRoom() {
             unsubscribeFromRoom();
             currentPlayerId = null;
             currentPlayerName = null;
             currentRoomCode = null;
+        }
+
+        async function leaveWatchParty() {
+            const playerId = currentPlayerId;
+
+            exitRoom();
             localStorage.removeItem(PARTY_STORAGE_KEY);
             localStorage.removeItem(BOARD_STORAGE_KEY);
             updatePartyUI();
@@ -877,6 +881,17 @@
 
             drawSnow();
         }
+
+        // Keeps other open tabs of the same player in step with this one.
+        window.addEventListener('storage', event => {
+            if (event.key === BOARD_STORAGE_KEY && event.newValue) {
+                restoreSavedBoard();
+            } else if (event.key === PARTY_STORAGE_KEY && !event.newValue && currentPlayerId) {
+                exitRoom();
+                updatePartyUI();
+                openJoinModal();
+            }
+        });
 
         // Start everything on load
         window.onload = () => {
