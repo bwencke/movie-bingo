@@ -1176,15 +1176,11 @@
             clearInviteRoomParam();
             if (inviteRoomCode) document.getElementById('join-room').value = inviteRoomCode;
 
-            let savedParty = isMultiplayerAvailable() ? loadSavedParty() : null;
-            // An invite to a different room replaces the party this browser was in.
+            const savedParty = isMultiplayerAvailable() ? loadSavedParty() : null;
+            // Never drop an existing party from a link alone; the player leaves it themselves.
             if (savedParty && inviteRoomCode && savedParty.roomCode !== inviteRoomCode) {
                 document.getElementById('join-name').value = savedParty.playerName;
-                window.supabaseClient.from('players').delete().eq('id', savedParty.playerId)
-                    .then(({ error }) => { if (error) console.warn('Could not leave previous room:', error.message); });
-                localStorage.removeItem(PARTY_STORAGE_KEY);
-                localStorage.removeItem(BOARD_STORAGE_KEY);
-                savedParty = null;
+                showAlert('Already in a watch party', `You're in room ${savedParty.roomCode}. To join ${inviteRoomCode}, tap Leave, then Join Watch Party.`);
             }
 
             if (!(savedParty && restoreSavedBoard(savedParty.playerId))) {
