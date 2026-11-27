@@ -806,7 +806,7 @@
         function parseSharedBoard(board) {
             if (!Array.isArray(board) || board.length !== 25) return null;
             return board.map((cell, index) => ({
-                text: String(cell && cell.text != null ? cell.text : '').slice(0, 120),
+                text: cell && typeof cell.text === 'string' ? cell.text.slice(0, 120) : '',
                 marked: index === 12 || !!(cell && cell.marked),
                 isFree: index === 12
             }));
