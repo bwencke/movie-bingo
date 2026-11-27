@@ -144,6 +144,7 @@
                 </button>
                 <div id="room-badge" class="inline-flex items-center gap-2 bg-holiday-green text-white font-bold text-sm py-1.5 pl-4 pr-1.5 rounded-full shadow-lg hidden">
                     <span>🎄 Room: <span id="room-code-label" class="tracking-widest"></span></span>
+                    <button onclick="copyInviteLink()" class="bg-holiday-gold hover:bg-yellow-500 text-gray-900 text-xs font-semibold py-1 px-3 rounded-full transition-colors">🔗 Invite</button>
                     <button onclick="leaveWatchParty()" class="bg-green-900 hover:bg-green-950 text-green-100 text-xs font-semibold py-1 px-3 rounded-full transition-colors">Leave</button>
                 </div>
             </div>
@@ -210,15 +211,29 @@
                        class="w-full mb-4 px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white focus:outline-none focus:border-holiday-gold">
 
                 <label for="join-room" class="block text-left text-sm font-semibold text-gray-300 mb-1">Room Code</label>
-                <input id="join-room" type="text" placeholder="SANTA26" autocomplete="off" required
-                       oninput="this.value = normalizeRoomCode(this.value)"
-                       class="w-full mb-4 px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white uppercase tracking-widest focus:outline-none focus:border-holiday-gold">
+                <div class="flex gap-2 mb-4">
+                    <input id="join-room" type="text" placeholder="SANTA26" autocomplete="off" required
+                           oninput="this.value = normalizeRoomCode(this.value)"
+                           class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white uppercase tracking-widest focus:outline-none focus:border-holiday-gold">
+                    <button type="button" onclick="fillNewRoomCode()" class="shrink-0 bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold py-2 px-3 rounded-lg">🎲 New Code</button>
+                </div>
 
                 <p id="join-error" class="text-red-400 text-sm mb-3 hidden"></p>
 
                 <button id="join-submit" type="submit" class="bg-holiday-red hover:bg-red-700 disabled:opacity-60 text-white font-bold py-2 px-6 rounded-full w-full mb-2">Join Party</button>
                 <button type="button" onclick="playSolo()" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-full w-full">Play Solo</button>
             </form>
+        </div>
+
+        <!-- Switch Room Modal (invite link to a different room) -->
+        <div id="switch-room-modal" class="fixed inset-0 bg-black bg-opacity-70 z-40 flex items-center justify-center hidden">
+            <div class="bg-gray-800 p-6 rounded-xl border-2 border-holiday-gold max-w-sm w-full mx-4 text-center" role="dialog" aria-modal="true" aria-labelledby="switch-room-title">
+                <h3 id="switch-room-title" class="text-3xl font-festive text-holiday-gold mb-2">Switch Rooms?</h3>
+                <p class="text-white mb-5">You're in room <span id="switch-room-current" class="font-bold tracking-widest"></span>. This invite is for room <span id="switch-room-invite" class="font-bold tracking-widest"></span>.</p>
+                <p id="switch-room-error" class="text-red-400 text-sm mb-3 hidden"></p>
+                <button id="switch-room-join" onclick="switchToInvitedRoom()" class="bg-holiday-red hover:bg-red-700 disabled:opacity-60 text-white font-bold py-2 px-6 rounded-full w-full mb-2"></button>
+                <button id="switch-room-stay" onclick="closeSwitchRoomModal()" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-full w-full"></button>
+            </div>
         </div>
 
         <!-- Other Player's Card Modal -->
@@ -551,6 +566,92 @@
 
         function normalizeRoomCode(value) {
             return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+        }
+
+        const ROOM_CODE_WORDS = ['SANTA', 'ELF', 'SNOW', 'COCOA', 'JINGLE', 'TINSEL', 'HOLLY', 'FROSTY', 'SLEIGH', 'GINGER', 'CAROL', 'MITTEN'];
+        const ROOM_URL_PARAM = 'room';
+
+        function generateRoomCode() {
+            const [wordIndex, number] = crypto.getRandomValues(new Uint32Array(2));
+            const digits = String(number % 10000).padStart(4, '0');
+            return ROOM_CODE_WORDS[wordIndex % ROOM_CODE_WORDS.length] + digits;
+        }
+
+        function fillNewRoomCode() {
+            document.getElementById('join-room').value = generateRoomCode();
+            document.getElementById('join-error').classList.add('hidden');
+        }
+
+        function getInviteRoomCode() {
+            return normalizeRoomCode(new URLSearchParams(window.location.search).get(ROOM_URL_PARAM) || '');
+        }
+
+        function clearInviteRoomParam() {
+            const url = new URL(window.location.href);
+            if (!url.searchParams.has(ROOM_URL_PARAM)) return;
+            url.searchParams.delete(ROOM_URL_PARAM);
+            history.replaceState(null, '', url);
+        }
+
+        function buildInviteLink(roomCode) {
+            const url = new URL(window.location.href);
+            url.search = '';
+            url.hash = '';
+            url.searchParams.set(ROOM_URL_PARAM, roomCode);
+            return url.toString();
+        }
+
+        async function copyInviteLink() {
+            if (!currentRoomCode) return;
+            const link = buildInviteLink(currentRoomCode);
+            try {
+                await navigator.clipboard.writeText(link);
+                showToast('Invite link copied! Paste it to your friends.', '🔗', 'invite-link');
+            } catch (err) {
+                console.warn('Could not copy invite link:', err);
+                showAlert('Invite your friends', `Share this link: ${link}`);
+            }
+        }
+
+        let pendingInviteRoomCode = null;
+
+        function openSwitchRoomModal(inviteRoomCode) {
+            pendingInviteRoomCode = inviteRoomCode;
+            document.getElementById('switch-room-current').innerText = currentRoomCode;
+            document.getElementById('switch-room-invite').innerText = inviteRoomCode;
+            document.getElementById('switch-room-join').innerText = `Leave & join ${inviteRoomCode}`;
+            document.getElementById('switch-room-stay').innerText = `Stay in ${currentRoomCode}`;
+            document.getElementById('switch-room-error').classList.add('hidden');
+            document.getElementById('switch-room-modal').classList.remove('hidden');
+        }
+
+        function closeSwitchRoomModal() {
+            pendingInviteRoomCode = null;
+            document.getElementById('switch-room-modal').classList.add('hidden');
+        }
+
+        async function switchToInvitedRoom() {
+            const roomCode = pendingInviteRoomCode;
+            const playerName = currentPlayerName;
+            if (!roomCode || !playerName) return closeSwitchRoomModal();
+
+            const joinButton = document.getElementById('switch-room-join');
+            joinButton.disabled = true;
+            joinButton.innerText = 'Switching…';
+            try {
+                await leaveWatchParty();
+                await joinWatchParty(playerName, roomCode);
+                closeSwitchRoomModal();
+            } catch (err) {
+                console.warn('Could not switch rooms:', err);
+                closeSwitchRoomModal();
+                document.getElementById('join-name').value = playerName;
+                document.getElementById('join-room').value = roomCode;
+                openJoinModal();
+                showJoinError("Couldn't join the new room. Please try again.");
+            } finally {
+                joinButton.disabled = false;
+            }
         }
 
         function onPartyButtonClick() {
@@ -1123,7 +1224,15 @@
                 sessionStorage.removeItem(key);
             });
 
+            const inviteRoomCode = getInviteRoomCode();
+            clearInviteRoomParam();
+            if (inviteRoomCode) document.getElementById('join-room').value = inviteRoomCode;
+
             const savedParty = isMultiplayerAvailable() ? loadSavedParty() : null;
+            // Never drop an existing party from a link alone; the player chooses.
+            if (savedParty && inviteRoomCode && savedParty.roomCode !== inviteRoomCode) {
+                document.getElementById('join-name').value = savedParty.playerName;
+            }
 
             if (!(savedParty && restoreSavedBoard(savedParty.playerId))) {
                 initGame();
@@ -1133,6 +1242,7 @@
             if (savedParty) {
                 restoreWatchParty(savedParty).then(restored => {
                     if (!restored) openJoinModal();
+                    else if (inviteRoomCode && inviteRoomCode !== savedParty.roomCode) openSwitchRoomModal(inviteRoomCode);
                 }).catch(() => openJoinModal());
             } else if (isMultiplayerAvailable()) {
                 openJoinModal();
