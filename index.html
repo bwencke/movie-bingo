@@ -873,6 +873,7 @@
                     label += ' 👀';
                     pill.type = 'button';
                     pill.title = `See ${player.player_name}'s card`;
+                    pill.dataset.playerId = player.id;
                     pill.onclick = () => openPlayerCard(player.id);
                 }
 
@@ -892,8 +893,13 @@
         }
 
         function closePlayerCard() {
+            if (!viewedPlayerId) return;
+            const playerId = viewedPlayerId;
             viewedPlayerId = null;
             document.getElementById('card-modal').classList.add('hidden');
+            // The leaderboard re-renders its pills, so find the player's current one to return focus to.
+            const pill = document.querySelector(`#party-leaderboard button[data-player-id="${CSS.escape(playerId)}"]`);
+            if (pill) pill.focus();
         }
 
         // Re-renders on every presence sync so the open card follows the other player live.
